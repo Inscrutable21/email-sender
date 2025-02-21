@@ -72,13 +72,19 @@ interface EmailSendResult {
 
 // Ensure temporary directory exists
 const ensureTempDirExists = async () => {
-  const tmpDir = path.join(process.cwd(), 'tmp');
+  // Use /tmp directory in production (Vercel), or local tmp directory in development
+  const tmpDir = process.env.NODE_ENV === 'production' 
+    ? '/tmp'
+    : path.join(process.cwd(), 'tmp');
+
   try {
     await fs.access(tmpDir);
   } catch (error: unknown) {
     console.error('Temp directory does not exist, creating:', error);
-    // Directory doesn't exist, create it
-    await fs.mkdir(tmpDir, { recursive: true });
+    if (process.env.NODE_ENV !== 'production') {
+      // Only create directory in development
+      await fs.mkdir(tmpDir, { recursive: true });
+    }
   }
   return tmpDir;
 };
@@ -255,12 +261,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
 
     // Clean up temporary files
-    for (const filepath of filesToDelete) {
-      try {
-        await fs.access(filepath);
-        await fs.unlink(filepath);
-      } catch (cleanupError: unknown) {
-        console.error(`Failed to delete temporary file ${filepath}:`, cleanupError);
+    if (process.env.NODE_ENV === 'production') {
+      for (const filepath of filesToDelete) {
+        try {
+          await fs.unlink(filepath);
+        } catch (cleanupError) {
+          console.error(`Failed to delete temporary file ${filepath}:`, cleanupError);
+        }
       }
     }
 
@@ -286,13 +293,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     });
   } catch (mainError: unknown) {
-    // Clean up temporary files
-    for (const filepath of filesToDelete) {
-      try {
-        await fs.access(filepath);
-        await fs.unlink(filepath);
-      } catch {
-        // Ignore cleanup errors
+    // Clean up temporary files in case of error
+    if (process.env.NODE_ENV === 'production') {
+      for (const filepath of filesToDelete) {
+        try {
+          await fs.unlink(filepath);
+        } catch {
+          // Ignore cleanup errors
+        }
       }
     }
 
