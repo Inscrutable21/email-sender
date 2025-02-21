@@ -1,6 +1,6 @@
 // src/components/EmailCampaignManager.tsx
 import React, { useState, useEffect } from 'react';
-import { Email, EmailStatus } from '@prisma/client';
+import { EmailStatus } from '@prisma/client';
 import { X } from 'lucide-react';
 
 interface EmailType {
@@ -36,11 +36,10 @@ const EmailCampaignManager: React.FC = () => {
       if (!response.ok) throw new Error('Failed to fetch emails');
       const data = await response.json();
       setEmails(data.emails);
-    } catch (error) {
-      console.error('Error fetching emails:', error);
+    } catch (error: unknown) {
       setNotification({
         type: 'error',
-        message: 'Failed to fetch emails'
+        message: error instanceof Error ? error.message : 'Failed to fetch emails'
       });
     } finally {
       setIsLoading(false);
@@ -78,10 +77,11 @@ const EmailCampaignManager: React.FC = () => {
       };
 
       reader.readAsText(file);
-    } catch (error) {
+    } catch (uploadError: unknown) {
+      console.error('Upload error:', uploadError);
       setNotification({
         type: 'error',
-        message: 'Failed to upload file'
+        message: uploadError instanceof Error ? uploadError.message : 'Failed to upload file'
       });
     } finally {
       setIsLoading(false);

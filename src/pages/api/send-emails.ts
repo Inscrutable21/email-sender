@@ -14,19 +14,56 @@ export const config = {
 
 // Types
 type EmailStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+// Define proper types for metadata
+interface EmailMetadata {
+  attachments?: Array<{
+    filename: string;
+    type: string;
+  }>;
+  lastError?: string;
+  attemptedAt?: string;
+}
+
+// Update EmailRecord interface with proper metadata type
 interface EmailRecord {
   id: string;
   emailAddress: string;
   status: EmailStatus;
   sentAt?: Date;
   errorMessage?: string | null;
-  metadata?: Record<string, any>;
+  metadata?: EmailMetadata;
 }
+
+// Define proper types for formidable
+interface FormidableFields {
+  [key: string]: string[];
+}
+
+interface FormidableFiles {
+  [key: string]: formidable.File[];
+}
+
+interface FormidableResult {
+  fields: FormidableFields;
+  files: FormidableFiles;
+}
+
+// Define proper file interface
+interface FormidableFile {
+  filepath: string;
+  originalFilename?: string;
+  mimetype?: string;
+  size: number;
+}
+
+// Add missing interfaces
 interface EmailAttachment {
-  filename?: string;
+  filename: string;
   content: Buffer;
   contentType: string;
 }
+
 interface EmailSendResult {
   success: boolean;
   email: string;
@@ -38,29 +75,33 @@ const ensureTempDirExists = async () => {
   const tmpDir = path.join(process.cwd(), 'tmp');
   try {
     await fs.access(tmpDir);
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error('Temp directory does not exist, creating:', error);
     // Directory doesn't exist, create it
     await fs.mkdir(tmpDir, { recursive: true });
   }
   return tmpDir;
 };
 
-// Parse form data
-const parseForm = async (req: NextApiRequest) => {
+// Parse form data with proper typing
+const parseForm = async (req: NextApiRequest): Promise<FormidableResult> => {
   const tmpDir = await ensureTempDirExists();
   
   const form = formidable({
     multiples: true,
-    maxFileSize: 10 * 1024 * 1024, // 10MB max
+    maxFileSize: 10 * 1024 * 1024,
     uploadDir: tmpDir,
     keepExtensions: true,
     filter: ({ mimetype }) => mimetype === 'application/pdf',
   });
 
   return new Promise((resolve, reject) => {
-    form.parse(req, (err, fields, files) => {
-      if (err) return reject(err);
-      resolve({ fields, files });
+    form.parse(req, (err: Error | null, fields: formidable.Fields, files: formidable.Files) => {
+      if (err) reject(err);
+      resolve({ 
+        fields: fields as FormidableFields, 
+        files: files as FormidableFiles 
+      });
     });
   });
 };
@@ -152,8 +193,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const filesToDelete: string[] = [];
 
   try {
-    // Parse the form data
-    const { fields, files } = await parseForm(req) as any;
+    const { fields, files } = await parseForm(req);
     
     const subject = fields.subject?.[0] || '';
     const content = fields.content?.[0] || '';
@@ -162,11 +202,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ message: 'Missing required fields: subject and content' });
     }
 
-    // Initialize email transporter
     const transporter = createTransporter();
     await transporter.verify();
 
-    // Get pending emails 
     const pendingEmails = await prisma.email.findMany({
       where: { status: 'PENDING' }
     }) as EmailRecord[];
@@ -175,15 +213,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ message: 'No pending emails to send' });
     }
 
-    // Prepare PDF attachments
     const attachments: EmailAttachment[] = [];
 
     for (const [key, fileArray] of Object.entries(files)) {
       if (key.startsWith('attachment') && Array.isArray(fileArray) && fileArray[0]) {
-        const file = fileArray[0] as any;
+        const file = fileArray[0] as unknown as FormidableFile;
         
         try {
-          // Validate file exists and is a PDF
           if (file.mimetype !== 'application/pdf') {
             return res.status(400).json({ message: 'Only PDF files are allowed' });
           }
@@ -192,10 +228,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ message: 'PDF file size must be less than 10MB' });
           }
           
-          // Check if file exists before trying to read it
           await fs.access(file.filepath);
-          
-          // Read the file
           const fileContent = await fs.readFile(file.filepath);
           
           attachments.push({
@@ -205,39 +238,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
           
           filesToDelete.push(file.filepath);
-        } catch (error) {
-          console.error(`Error processing file ${file.originalFilename}:`, error);
+        } catch (fileError: unknown) {
+          console.error(`Error processing file ${file.originalFilename}:`, fileError);
           return res.status(500).json({ 
             message: 'Error processing attachment',
-            error: error instanceof Error ? error.message : 'Unknown error'
+            error: fileError instanceof Error ? fileError.message : 'Unknown error'
           });
         }
       }
     }
 
-    // Send emails
     const results = await Promise.allSettled(
       pendingEmails.map(emailRecord => 
         sendSingleEmail(emailRecord, subject, content, attachments, transporter)
       )
     );
 
-    // Clean up temporary files - only delete files that exist
+    // Clean up temporary files
     for (const filepath of filesToDelete) {
       try {
         await fs.access(filepath);
         await fs.unlink(filepath);
-      } catch (error) {
-        console.error(`Failed to delete temporary file ${filepath}:`, error);
+      } catch (cleanupError: unknown) {
+        console.error(`Failed to delete temporary file ${filepath}:`, cleanupError);
       }
     }
 
-    // Calculate statistics
     const successCount = results.filter(r => 
       r.status === 'fulfilled' && r.value.success
     ).length;
     
-    // Send response
     res.status(200).json({
       message: `Successfully sent ${successCount} emails, ${results.length - successCount} failed`,
       results: results.map((result, index) => {
@@ -255,21 +285,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         attachments: attachments.length
       }
     });
-  } catch (error) {
-    // Clean up temporary files - safely
+  } catch (mainError: unknown) {
+    // Clean up temporary files
     for (const filepath of filesToDelete) {
       try {
         await fs.access(filepath);
         await fs.unlink(filepath);
-      } catch (error) {
-        // Ignore errors when cleaning up
+      } catch {
+        // Ignore cleanup errors
       }
     }
 
-    console.error('Error sending emails:', error);
+    console.error('Error sending emails:', mainError);
     res.status(500).json({ 
       message: 'Failed to send emails',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: mainError instanceof Error ? mainError.message : 'Unknown error'
     });
   }
 }

@@ -11,16 +11,32 @@ export interface EmailData {
   position?: string;
 }
 
+interface CsvRowData {
+  [key: string]: string | undefined;
+  email?: string;
+  Email?: string;
+  EMAIL?: string;
+  name?: string;
+  Name?: string;
+  NAME?: string;
+  company?: string;
+  Company?: string;
+  COMPANY?: string;
+  position?: string;
+  Position?: string;
+  POSITION?: string;
+}
+
 export const parseCSV = (file: File): Promise<EmailData[]> => {
   return new Promise((resolve, reject) => {
-    Papa.parse<EmailData>(file, {
+    Papa.parse<CsvRowData>(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results: ParseResult<EmailData>) => {
+      complete: (results: ParseResult<CsvRowData>) => {
         try {
           const emails = results.data
-            .map((row: any) => ({
-              email: row.email || row.Email || row.EMAIL,
+            .map((row: CsvRowData) => ({
+              email: row.email || row.Email || row.EMAIL || '',
               name: row.name || row.Name || row.NAME,
               company: row.company || row.Company || row.COMPANY,
               position: row.position || row.Position || row.POSITION
@@ -44,11 +60,11 @@ export const parseExcel = async (file: File): Promise<EmailData[]> => {
     const workbook = XLSX.read(arrayBuffer, { type: 'array' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    const rawData = XLSX.utils.sheet_to_json<CsvRowData>(worksheet);
 
-    return data
-      .map((row: any) => ({
-        email: row.email || row.Email || row.EMAIL,
+    return rawData
+      .map((row: CsvRowData) => ({
+        email: row.email || row.Email || row.EMAIL || '',
         name: row.name || row.Name || row.NAME,
         company: row.company || row.Company || row.COMPANY,
         position: row.position || row.Position || row.POSITION

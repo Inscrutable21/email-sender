@@ -1,16 +1,27 @@
 import React, { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import Papa from 'papaparse';
+import Papa, { ParseResult } from 'papaparse';
+
+interface CsvRow {
+  email?: string;
+  [key: string]: string | undefined;
+}
+
+interface EmailUpload {
+  emailAddress: string;
+}
 
 const Uploader: React.FC = () => {
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     
-    Papa.parse(file, {
-      complete: async (results) => {
-        const emails = results.data.map((row: any) => ({
-          emailAddress: row.email || row[0], // Assumes first column is email if no header
-        }));
+    Papa.parse<CsvRow>(file, {
+      complete: async (results: ParseResult<CsvRow>) => {
+        const emails: EmailUpload[] = results.data
+          .filter((row): row is CsvRow => row !== null && typeof row === 'object')
+          .map((row) => ({
+            emailAddress: row.email || row[0] || '', // Assumes first column is email if no header
+          }));
 
         try {
           const response = await fetch('/api/upload', {
