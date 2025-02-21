@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "clean": "rimraf node_modules/.prisma node_modules/@prisma",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && next build",
     "dev": "next dev",
-    "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@prisma/client": "^6.4.1",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-slot": "^1.1.2",
     "@types/papaparse": "^5.3.15",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@prisma/client": "^6.4.1",
     "@types/formidable": "^3.4.5",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.17",
@@ -34,7 +36,8 @@
     "eslint": "^9",
     "eslint-config-next": "15.1.7",
     "postcss": "^8",
-    "prisma": "^6.3.1",
+    "prisma": "^6.4.1",
+    "rimraf": "^6.0.1",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
